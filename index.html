@@ -1,1 +1,183 @@
 
+<!DOCTYPE html>
+<html lang="sq">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NB's Cuts | Rezervo Online</title>
+<style>
+:root{--gold:#d9b45f;--black:#090909}
+*{box-sizing:border-box}
+body{margin:0;background:var(--black);color:#f5f2eb;font-family:Arial,sans-serif}
+header{text-align:center;padding:45px 15px;background:linear-gradient(145deg,#17130b,#050505);border-bottom:1px solid #574521}
+.logo{font-family:Georgia,serif;font-style:italic;font-size:48px;color:var(--gold)}
+h1{font-family:Georgia,serif;color:var(--gold);font-size:30px}
+.subtitle{color:#bbb}
+.goldline{height:2px;width:130px;background:var(--gold);margin:18px auto}
+main{max-width:750px;margin:auto;padding:20px}
+.card{background:#151515;border:1px solid #514323;border-radius:18px;padding:24px;margin:22px 0}
+h2{margin-top:0;font-size:23px}
+label{display:block;margin:18px 0 8px}
+input{width:100%;padding:15px;border-radius:9px;border:1px solid #555;background:#222;color:white;font-size:16px;color-scheme:dark}
+.slots{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:15px}
+.slot{padding:13px 5px;background:#181818;border:1px solid var(--gold);border-radius:8px;color:var(--gold);font-size:15px}
+.slot:disabled{color:#777;border-color:#444;background:#252525}
+.slot.selected{background:var(--gold);color:#111;font-weight:bold}
+.submit{width:100%;background:linear-gradient(135deg,#f4d889,#bb8b32);border:0;border-radius:10px;padding:17px;font-weight:bold;font-size:17px;margin-top:22px;color:#111}
+.submit:disabled{opacity:.5}
+.info{display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid #333;padding:12px 0}
+.info span:last-child{color:var(--gold)}
+.message{margin-top:15px;line-height:1.5}
+a{color:var(--gold)}
+footer{text-align:center;color:#999;padding:30px}
+@media(max-width:400px){.slots{grid-template-columns:repeat(2,1fr)}.logo{font-size:40px}}
+</style>
+</head>
+<body>
+<header>
+<div class="logo">NB's Cuts</div>
+<div class="goldline"></div>
+<p class="subtitle">BARBERSHOP • PRERJE PROFESIONALE</p>
+<h1>Rezervo takimin tënd</h1>
+<p>Stili yt fillon këtu.</p>
+</header>
+<main>
+<section class="card">
+<h2>✂️ Rezervim Online</h2>
+<p class="subtitle">Prerje flokësh • 30 minuta</p>
+<form id="form">
+<label for="date">Zgjidh datën</label>
+<input id="date" type="date" required>
+<label>Zgjidh orarin</label>
+<div id="slots" class="slots"></div>
+<label for="name">Emri dhe mbiemri</label>
+<input id="name" required minlength="2" maxlength="80" autocomplete="name" placeholder="Emri yt">
+<label for="phone">Numri i telefonit</label>
+<input id="phone" type="tel" required minlength="6" maxlength="20" autocomplete="tel" placeholder="+355 69...">
+<button id="submit" class="submit" type="submit">REZERVO TAKIMIN</button>
+<div id="message" class="message" role="status" aria-live="polite"></div>
+</form>
+</section>
+<section class="card">
+<h2>Orari i punës</h2>
+<div class="info"><span>E hënë – E shtunë</span><span>09:00 – 20:00</span></div>
+<div class="info"><span>E diel</span><span>Mbyllur</span></div>
+<div class="info"><span>Kohëzgjatja</span><span>30 minuta</span></div>
+<p>Na kontakto në <a href="https://wa.me/355698544456">WhatsApp</a>.</p>
+</section>
+</main>
+<footer>© NB's Cuts • Black & Gold</footer>
+<script>
+const URL_BASE="https://nzrroinwousywtezjcfd.supabase.co";
+const KEY="sb_publishable_IyMY0ac_JZz-NlYMX4umAw_7NhdP4jq";
+const dateEl=document.getElementById("date");
+const slotsEl=document.getElementById("slots");
+const message=document.getElementById("message");
+const form=document.getElementById("form");
+const submit=document.getElementById("submit");
+let selected=null;
+let available=false;
+
+function tiranaParts(){
+ const parts=new Intl.DateTimeFormat("en-CA",{
+ timeZone:"Europe/Tirane",
+ year:"numeric",month:"2-digit",day:"2-digit",
+ hour:"2-digit",minute:"2-digit",hourCycle:"h23"
+ }).formatToParts(new Date());
+ const p=Object.fromEntries(parts.map(x=>[x.type,x.value]));
+ return {date:`${p.year}-${p.month}-${p.day}`,time:`${p.hour}:${p.minute}`};
+}
+function sunday(d){
+ const [y,m,day]=d.split("-").map(Number);
+ return new Date(Date.UTC(y,m-1,day)).getUTCDay()===0;
+}
+function addDays(d,n){
+ const [y,m,day]=d.split("-").map(Number);
+ const x=new Date(Date.UTC(y,m-1,day+n));
+ return x.toISOString().slice(0,10);
+}
+async function rpc(name,data){
+ const res=await fetch(`${URL_BASE}/rest/v1/rpc/${name}`,{
+ method:"POST",
+ headers:{"Content-Type":"application/json","apikey":KEY},
+ body:JSON.stringify(data)
+ });
+ const raw=await res.text();
+ let value;
+ try{value=JSON.parse(raw)}catch{value=raw}
+ if(!res.ok)throw new Error(value?.message||"Gabim në server");
+ return value;
+}
+function note(t){message.textContent=t}
+async function loadSlots(){
+ const d=dateEl.value;
+ selected=null;available=false;
+ slotsEl.innerHTML="";
+ if(!d)return;
+ const now=tiranaParts();
+ if(d<now.date||d>addDays(now.date,60)||sunday(d)){
+ note("Zgjidh një datë të vlefshme, përveç të dielës.");
+ return;
+ }
+ note("Duke kontrolluar oraret...");
+ try{
+ const booked=await rpc("booked_slots",{p_date:d});
+ if(dateEl.value!==d)return;
+ const busy=new Set((booked||[]).map(x=>x.booking_time.slice(0,5)));
+ for(let h=9;h<20;h++){
+ for(let m of [0,30]){
+ const t=`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
+ const b=document.createElement("button");
+ b.type="button";b.className="slot";
+ const occupied=busy.has(t);
+ const past=d===now.date&&t<=now.time;
+ b.disabled=occupied||past;
+ b.textContent=t+(occupied?" • Zënë":"");
+ b.onclick=()=>{
+ document.querySelectorAll(".slot").forEach(x=>x.classList.remove("selected"));
+ b.classList.add("selected");selected=t;
+ note("Ora e zgjedhur: "+t);
+ };
+ slotsEl.appendChild(b);
+ }
+ }
+ available=true;
+ note("Zgjidh një orar të lirë.");
+ }catch(e){
+ available=false;
+ note("Nuk u ngarkuan oraret. Provo përsëri.");
+ }
+}
+dateEl.min=tiranaParts().date;
+dateEl.max=addDays(tiranaParts().date,60);
+dateEl.addEventListener("change",loadSlots);
+form.addEventListener("submit",async e=>{
+ e.preventDefault();
+ if(!selected||!available){
+ note("Zgjidh fillimisht një orar të lirë.");return;
+ }
+ const d=dateEl.value,t=selected;
+ const name=document.getElementById("name").value.trim();
+ const phone=document.getElementById("phone").value.trim();
+ if(name.length<2||phone.length<6){note("Plotëso të dhënat.");return}
+ submit.disabled=true;
+ note("Duke ruajtur rezervimin...");
+ try{
+ await rpc("make_booking",{
+ p_name:name,p_phone:phone,p_date:d,p_time:t
+ });
+ note(`Rezervimi u ruajt me sukses! ${d}, ora ${t}.`);
+ selected=null;
+ await loadSlots();
+ note(`Rezervimi u ruajt me sukses! ${d}, ora ${t}.`);
+ form.reset();
+ dateEl.value="";
+ }catch(e){
+ note("Rezervimi nuk u krye. Ora mund të jetë zënë ose të dhënat janë të pavlefshme. Kontrollo dhe provo përsëri.");
+ await loadSlots();
+ }finally{submit.disabled=false}
+});
+</script>
+</body>
+</html>
+
